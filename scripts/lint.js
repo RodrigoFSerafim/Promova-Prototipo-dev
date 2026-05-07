@@ -5,8 +5,11 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const filesToCheck = [
   "app.js",
+  "lib/github-api.js",
+  "lib/github-extract.js",
   "scripts/build.js",
   "scripts/dev-server.js",
+  "scripts/api-server.js",
   "scripts/lint.js",
 ];
 

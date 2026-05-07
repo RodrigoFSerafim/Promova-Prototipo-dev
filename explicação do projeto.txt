@@ -1,0 +1,67 @@
+1. Contexto e Problema.
+
+Hoje, o sistema de promoções em empresas é geralmente guiado por career frameworks, que definem o que é esperado de cada nível de senioridade, e o que é necessário para cada promoção.
+
+O problema, é que esse processo pode ser extremamente enviesado por relações pessoais (funcionário mamando a bola do chefe), demorado, e pouco estruturado. E isso causa falta de clareza sobre progressão de carreira, e muitas vezes, promoções injustas. 
+
+2. Processo Atual
+
+Minha visão do processo atual: 
+Funcionário junta evidências manualmente
+Usa planilha/documento pra registrar coisas importantes
+Manager tenta avaliar
+Decisão de promoção acontece
+
+Isso é muito manual. E olha que ainda é bom, tem lugar que nem faz isso e só promove o cara por causa da opiniao do gestor, sem embasamento em cima de dados nem porra nenhuma.
+
+3. A Ideia
+
+A ideia é uma plataforma onde os funcionários podem registrar suas evidências de forma contínua, seja manualmente ou de forma automática/semi-automática a partir das ferramentas que já usam no dia a dia.
+
+Ela vai usar como base o career framework da empresa, independente de como ele for estruturado. Seja por níveis (L1, L2, L3…), competências (técnicas, comportamentais, liderança) ou descrições de expectativas.
+
+A partir desse conceito, podemos registrar evidências com base no que a pessoa faz no dia a dia, lendo um PR do GitHub, uma Task do Jira ele pode classificar em relação ao nível atual ou ao próximo nível, e registrar como uma evidência de que aquela pessoa não é uma inútil e pode ser promovida.
+
+Com isso, a plataforma cria um histórico de impacto da pessoa ao longo do tempo, que facilita tanto o acompanhamento da evolução do funcionário, quanto a tomada de decisão em processos de avaliação e promoção. Fazendo com que a promoção não seja tirada do cu do manager.
+
+4. Que porra é um career framework?
+
+Career framework é uma estrutura definida pela empresa que descreve os níveis de carreira de uma determinada posição, e o que é esperado de cada um deles, normalmente dividido em níveis (Júnior, Pleno, Senior ou L1, L2, L3).
+
+Ele deve deixar claro ao funcionário o que é esperado de cada um de seus tópicos da Matriz de Competências (Escrever código, Observabilidade, Testes)
+
+https://docs.google.com/spreadsheets/d/1wYmJSN0ba2VcC0_Fs3xEhOVETzFaCVcYZCU5DX6h0z0/edit?usp=sharing
+
+Esse é um exemplo do career framework da minha empresa, e duas das competências pra dois níveis. Ele leva em conta o impacto individual de cada pessoa, e como esse impacto se encaixa nessa matriz de competência. O jeito de você registrar o seu impacto é por meio de evidências, que provam a sua competência naquele assunto.
+
+4.1 Que porra é uma evidência? 
+
+Uma evidência é algo que comprova a sua competência em algum assunto. Uma evidência é composta de 3 coisas principais: a competência a qual ela se refere, o que foi realizado de fato, e a evidência em si (um link para um PR do Github, mensagens do Slack, etc).
+
+Exemplos de evidencias reais minhas:
+
+Cloud Infra - Made pipeline adjustments to fix Connector-Bancontact's broken production deployment after the connector group changes (link do PR do Github)
+Observability - Helped to detect and solve connector Errors which were often occouring related to unsupported request values on UserInteraction (link do pr) 
+5. Exemplo: 
+eu, Software Engineer I peguei uma task relativamente complexa pra fazer pro 
+meu nível, GD-0001.
+
+No momento que eu marquei aquela task como "Done" no Jira, o nosso pipeline iria rodar, analisando aquela task e tudo relacionado a ela.
+
+Se existe algum PR no github referenciando aquela task com seu número no título, ele faria a análise com base no que foi descrito na task, e com base no Career framework, sabendo que eu sou um SWE 1, usaria esse parâmetro pra avaliar como tudo foi realizado, e se aquilo merece virar uma evidência de que eu estou me saindo bem.
+Acho que também podem ter evidências manuais, e o empregado, pode se quiser, adicionar mais contexto a uma evidência, ou corrigir alguma merda que a IA fez
+
+6 Produto
+
+Do lado do Engenheiro:
+
+É uma interface simples, que mostra as evidências registradas que ele tem tipo um dash, ou tabela, com uma referência clara ao career framework e o seu nível atual
+
+Do lado do Manager:
+
+Separado por pessoa do seu time, resume as evidências de cada um, e como o progresso deles está em relação ao próximo nível
+
+Internamente
+
+Temos integração com as plataformas que vamos analisar as evidências, e um wrapper de IA que usa como base o career framework definido pra analisar as evidências, e popular os dados
+

@@ -2,6 +2,173 @@ const LEVELS = ["L1", "L2", "L3", "L4", "L5"];
 const SESSION_STORAGE_KEY = "promova.session-evidences";
 const AUTH_USERS_KEY = "promova.accounts-v1";
 const AUTH_SESSION_KEY = "promova.session-user-v1";
+const PROMOVA_API_BASE_KEY = "promova.promova-backend-url-v1";
+
+function loadPersistedPromovaApiBase() {
+  if (typeof sessionStorage === "undefined") {
+    return "http://localhost:3100";
+  }
+
+  try {
+    const raw = sessionStorage.getItem(PROMOVA_API_BASE_KEY);
+    if (raw && String(raw).trim()) {
+      return String(raw).trim().replace(/\/+$/, "");
+    }
+  } catch {
+    //
+  }
+
+  return "http://localhost:3100";
+}
+
+function persistPromovaApiBase(url) {
+  if (typeof sessionStorage === "undefined") {
+    return;
+  }
+
+  try {
+    const normalized = String(url).trim().replace(/\/+$/, "");
+    sessionStorage.setItem(PROMOVA_API_BASE_KEY, normalized || "http://localhost:3100");
+  } catch {
+    //
+  }
+}
+
+/** @returns {{ owner: string, repo: string } | null} */
+function parseGithubRepoSlug(raw) {
+  let s = String(raw || "").trim();
+  if (!s) {
+    return null;
+  }
+
+  try {
+    if (/^https?:\/\//i.test(s)) {
+      const u = new URL(s);
+      if (u.hostname.toLowerCase() === "github.com") {
+        const parts = u.pathname.split("/").filter(Boolean);
+        if (parts.length >= 2) {
+          return { owner: parts[0], repo: parts[1].replace(/\.git$/i, "") };
+        }
+      }
+    }
+  } catch {
+    //
+  }
+
+  s = s.replace(/^git@github\.com:/i, "").replace(/\.git$/i, "");
+
+  const cut = s.split(/[?\#]/)[0];
+  const chunks = cut.split("/").filter(Boolean);
+
+  if (chunks.length >= 2) {
+    return { owner: chunks[0], repo: chunks[1] };
+  }
+
+  const singleSlash = /^([^/]+)\/([^/]+)$/i.exec(cut);
+  if (singleSlash) {
+    return { owner: singleSlash[1], repo: singleSlash[2] };
+  }
+
+  return null;
+}
+
+function truncateForCard(text, max = 132) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) {
+    return t;
+  }
+
+  return `${t.slice(0, max)}…`;
+}
+
+async function githubApiJson(apiBaseRaw, pathnameWithSlash) {
+  const base =
+    apiBaseRaw && String(apiBaseRaw).trim()
+      ? String(apiBaseRaw).trim().replace(/\/+$/, "")
+      : "http://localhost:3100";
+  const path = pathnameWithSlash.startsWith("/") ? pathnameWithSlash : `/${pathnameWithSlash}`;
+  const url = `${base}${path}`;
+
+  /** @type {Response} */
+  const response =
+    typeof fetch === "function" ?
+      await fetch(url, { method: "GET", headers: { Accept: "application/json" }, cache: "no-store" })
+    : null;
+
+  if (!response) {
+    throw new Error("Este navegador não suporta fetch — use um ambiente atual.");
+  }
+
+  const body = /** @type {Record<string, unknown>} */ (await response.json().catch(() => ({})));
+
+  if (!response.ok) {
+    const msg =
+      typeof body?.error === "string" ?
+        body.error
+      : typeof body.message === "string" ?
+        body.message
+      : `Falha na API (${response.status})`;
+
+    /** @type {Error & { status?: number }} */
+    const err = new Error(msg);
+    err.status = response.status;
+    throw err;
+  }
+
+  return body;
+}
+
+function buildEvidenceMarkdownFromGithubBundle(bundle, repoSlug, usernameHint) {
+  const hintTrim = typeof usernameHint === "string" ? usernameHint.trim() : "";
+  const pr =
+    bundle && typeof bundle === "object" && bundle.pull_request && typeof bundle.pull_request === "object" ?
+      /** @type {Record<string, unknown>} */ (bundle.pull_request)
+    : {};
+
+  const num = typeof pr.number === "number" ? pr.number : "—";
+  const titleStr = typeof pr.title === "string" ? pr.title : "";
+  const bodyFull =
+    typeof pr.body_full === "string" && pr.body_full.trim() ?
+      pr.body_full.trim()
+    : typeof pr.body_preview === "string" ?
+      String(pr.body_preview).trim()
+    : "";
+
+  const bodyShort = truncateForCard(bodyFull, 780);
+  const login =
+    hintTrim ?
+      hintTrim
+    : typeof pr.author_login === "string" && pr.author_login ?
+      `@${pr.author_login} (autor do PR)`
+    : "";
+
+  const add = typeof pr.additions === "number" ? pr.additions : 0;
+  const del = typeof pr.deletions === "number" ? pr.deletions : 0;
+  const files = typeof pr.changed_files_count === "number" ? pr.changed_files_count : 0;
+  const link = typeof pr.html_url === "string" ? pr.html_url : "";
+
+  return [
+    `GitHub • repositório ${repoSlug} • PR #${num}`,
+    login ? `Contexto/perfil relacionado à leitura: ${login}` : "",
+    "",
+    `Título: ${titleStr}`,
+    "",
+    `Volume coletado via API (+${add} −${del} linhas, ${files} arquivo(s)).`,
+    "",
+    bodyShort ? `Descrição/resumo:` : "",
+    bodyShort ? bodyShort : "",
+    "",
+    link ? `Link público do PR: ${link}` : "",
+    "",
+    "Posso revisar/editar esse texto antes de clicar em “Analisar evidência”.",
+  ]
+    .filter((line, index, lines) =>
+      !(line === "" && (lines[index + 1] === "" || index === lines.length - 1)) ? true : line !== "",
+    )
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 function normalizeEmail(value) {
   return String(value).trim().toLowerCase();
@@ -81,6 +248,9 @@ const INITIAL_FORM = {
   evidence: "",
   currentLevel: "L3",
   targetLevel: "L4",
+  githubRepo: "",
+  githubPullNumber: "",
+  githubUsernameHint: "",
 };
 
 const state = {
@@ -91,6 +261,13 @@ const state = {
   authSession: loadAuthSession(),
   loginError: "",
   registerError: "",
+  promovaApiBase: loadPersistedPromovaApiBase(),
+  githubImport: {
+    loading: false,
+    error: "",
+    pulls: /** @type {Array<Record<string, unknown>>} */ ([]),
+  },
+  pendingGithubEvidence: /** @type {null | Record<string, unknown>} */ (null),
 };
 
 function isAuthenticated() {
@@ -276,11 +453,77 @@ function levelOptions(selectedLevel) {
 
 function resetForm() {
   state.form = { ...INITIAL_FORM };
+  state.githubImport.loading = false;
+  state.githubImport.error = "";
+  state.githubImport.pulls = [];
+  state.pendingGithubEvidence = null;
 }
 
 function saveEvidence(result) {
   state.evidences = [result, ...state.evidences];
   persistSessionEvidences();
+}
+
+function getEvidenceSourceLabel(item) {
+  if (item && typeof item === "object" && item.source === "github") {
+    const repo = typeof item.githubRepo === "string" ? item.githubRepo : "";
+    const pr = Number.isFinite(item.githubPullNumber) ? `PR #${item.githubPullNumber}` : "PR";
+    return repo ? `GitHub • ${repo} • ${pr}` : `GitHub • ${pr}`;
+  }
+
+  return "Manual";
+}
+
+async function searchGithubPullsForForm() {
+  const slug = parseGithubRepoSlug(state.form.githubRepo);
+  if (!slug) {
+    throw new Error("Informe o repositório no formato owner/repo (ou URL do GitHub).");
+  }
+
+  const query = state.form.githubUsernameHint.trim()
+    ? `author:${state.form.githubUsernameHint.trim()}`
+    : "is:open is:closed";
+
+  const payload = await githubApiJson(
+    state.promovaApiBase,
+    `/api/github/repos/${encodeURIComponent(slug.owner)}/${encodeURIComponent(slug.repo)}/pulls/search?q=${encodeURIComponent(query)}&per_page=12`,
+  );
+
+  const pulls = Array.isArray(payload?.pulls) ? payload.pulls : [];
+  state.githubImport.pulls = pulls;
+  if (!pulls.length) {
+    throw new Error("Nenhum PR encontrado para os filtros informados.");
+  }
+}
+
+async function importGithubEvidenceIntoForm() {
+  const slug = parseGithubRepoSlug(state.form.githubRepo);
+  if (!slug) {
+    throw new Error("Informe o repositório no formato owner/repo (ou URL do GitHub).");
+  }
+
+  const pullNumber = Number.parseInt(String(state.form.githubPullNumber || "").trim(), 10);
+  if (!Number.isFinite(pullNumber) || pullNumber < 1) {
+    throw new Error("Informe um número de PR válido para importar.");
+  }
+
+  const payload = await githubApiJson(
+    state.promovaApiBase,
+    `/api/github/repos/${encodeURIComponent(slug.owner)}/${encodeURIComponent(slug.repo)}/pulls/${pullNumber}`,
+  );
+
+  const repoSlug = `${slug.owner}/${slug.repo}`;
+  state.form.evidence = buildEvidenceMarkdownFromGithubBundle(
+    payload,
+    repoSlug,
+    state.form.githubUsernameHint,
+  );
+  state.pendingGithubEvidence = {
+    repo: repoSlug,
+    pullNumber,
+    importedAt: new Date().toISOString(),
+    payload,
+  };
 }
 
 function iconSvg(name) {
@@ -884,7 +1127,7 @@ function liveDashboardPreview() {
                       <span class="${badgeClass(item.impactLevel)}">${escapeHtml(item.impactLevel)}</span>
                       <div>
                         <strong class="feed-title">${escapeHtml(item.evidence)}</strong>
-                        <p class="feed-sub">Atual: ${escapeHtml(item.currentLevel)} • Alvo: ${escapeHtml(item.targetLevel)}</p>
+                        <p class="feed-sub">Atual: ${escapeHtml(item.currentLevel)} • Alvo: ${escapeHtml(item.targetLevel)} • Fonte: ${escapeHtml(getEvidenceSourceLabel(item))}</p>
                       </div>
                       <span class="feed-time">${escapeHtml(formatTimestamp(item.createdAt))}</span>
                     </article>
@@ -937,6 +1180,70 @@ function EvidenceForm() {
 
           <div class="content-grid">
             <form id="evidence-form" class="form-card">
+              <div class="info-card soft-panel github-import-card">
+                <h3>Importar do GitHub</h3>
+                <p class="helper">Defina qual conta/repositório analisar e traga um PR para preencher a evidência automaticamente.</p>
+
+                <div class="field">
+                  <label for="promova-api-base">URL da API de extração</label>
+                  <input id="promova-api-base" name="promovaApiBase" data-field="promovaApiBase" type="url" placeholder="http://localhost:3100" value="${escapeHtml(state.promovaApiBase)}" />
+                  <p class="helper">Se a API subir em outra porta, ajuste aqui.</p>
+                </div>
+
+                <div class="field">
+                  <label for="github-repo">Repositório GitHub</label>
+                  <input id="github-repo" name="githubRepo" data-field="githubRepo" type="text" placeholder="owner/repo ou https://github.com/owner/repo" value="${escapeHtml(state.form.githubRepo)}" />
+                </div>
+
+                <div class="field-grid">
+                  <div class="field">
+                    <label for="github-username-hint">Conta GitHub para análise (opcional)</label>
+                    <input id="github-username-hint" name="githubUsernameHint" data-field="githubUsernameHint" type="text" placeholder="ex.: digod (sem @)" value="${escapeHtml(state.form.githubUsernameHint)}" />
+                  </div>
+                  <div class="field">
+                    <label for="github-pull-number">Número do PR</label>
+                    <input id="github-pull-number" name="githubPullNumber" data-field="githubPullNumber" type="number" min="1" step="1" placeholder="ex.: 1234" value="${escapeHtml(state.form.githubPullNumber)}" />
+                  </div>
+                </div>
+
+                ${
+                  state.githubImport.error
+                    ? `<p class="form-error" role="alert">${escapeHtml(state.githubImport.error)}</p>`
+                    : ""
+                }
+
+                ${
+                  state.githubImport.pulls.length
+                    ? `<div class="dashboard-feed github-pull-list">
+                        ${state.githubImport.pulls
+                          .slice(0, 8)
+                          .map(
+                            (pull) => `
+                              <article class="feed-item">
+                                <span class="badge info">PR #${escapeHtml(pull.number)}</span>
+                                <div>
+                                  <strong class="feed-title">${escapeHtml(pull.title || "Sem título")}</strong>
+                                  <p class="feed-sub">@${escapeHtml(pull.author_login || "desconhecido")} • ${escapeHtml(pull.state || "desconhecido")}</p>
+                                </div>
+                                <button class="button ghost" type="button" data-action="use-github-pr" data-pr-number="${escapeHtml(pull.number)}">Usar</button>
+                              </article>
+                            `,
+                          )
+                          .join("")}
+                      </div>`
+                    : ""
+                }
+
+                <div class="form-actions">
+                  <button class="button secondary" type="button" data-action="search-github-prs" ${state.githubImport.loading ? "disabled" : ""}>
+                    ${state.githubImport.loading ? "Carregando..." : "Buscar PRs"}
+                  </button>
+                  <button class="button primary" type="button" data-action="import-github-pr" ${state.githubImport.loading ? "disabled" : ""}>
+                    ${state.githubImport.loading ? "Aguarde..." : "Importar PR para evidência"}
+                  </button>
+                </div>
+              </div>
+
               <div class="field">
                 <label for="evidence">Evidência</label>
                 <textarea
@@ -1040,6 +1347,7 @@ function ResultView() {
               <h3>Resumo da evidência</h3>
               <p class="subtle">Nível atual: <strong>${escapeHtml(result.currentLevel)}</strong></p>
               <p class="subtle">Nível alvo: <strong>${escapeHtml(result.targetLevel)}</strong></p>
+              <p class="subtle">Fonte: <strong>${escapeHtml(getEvidenceSourceLabel(result))}</strong></p>
               <div class="evidence-preview">${escapeHtml(result.evidence)}</div>
             </div>
 
@@ -1185,7 +1493,70 @@ app.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "use-github-pr") {
+    const prNumber = trigger.dataset.prNumber;
+    if (prNumber) {
+      state.form.githubPullNumber = String(prNumber);
+      state.githubImport.error = "";
+      render();
+    }
+    return;
+  }
+
+  if (action === "search-github-prs") {
+    if (!isAuthenticated()) {
+      state.loginError = "Faça login para importar evidências do GitHub.";
+      state.view = "login";
+      render();
+      return;
+    }
+
+    state.githubImport.loading = true;
+    state.githubImport.error = "";
+    persistPromovaApiBase(state.promovaApiBase);
+    render();
+
+    searchGithubPullsForForm()
+      .catch((error) => {
+        state.githubImport.error =
+          typeof error?.message === "string" ? error.message : "Erro ao buscar PRs na API GitHub.";
+      })
+      .finally(() => {
+        state.githubImport.loading = false;
+        render();
+      });
+
+    return;
+  }
+
+  if (action === "import-github-pr") {
+    if (!isAuthenticated()) {
+      state.loginError = "Faça login para importar evidências do GitHub.";
+      state.view = "login";
+      render();
+      return;
+    }
+
+    state.githubImport.loading = true;
+    state.githubImport.error = "";
+    persistPromovaApiBase(state.promovaApiBase);
+    render();
+
+    importGithubEvidenceIntoForm()
+      .catch((error) => {
+        state.githubImport.error =
+          typeof error?.message === "string" ? error.message : "Erro ao importar PR via API GitHub.";
+      })
+      .finally(() => {
+        state.githubImport.loading = false;
+        render();
+      });
+
+    return;
+  }
+
   if (action === "prefill-example") {
+    state.pendingGithubEvidence = null;
     state.form.evidence = "Refatorei o módulo de pagamentos e aumentei a cobertura de testes";
     state.form.currentLevel = "L3";
     state.form.targetLevel = "L4";
@@ -1201,6 +1572,31 @@ app.addEventListener("input", (event) => {
 
   if (field.dataset.field === "evidence") {
     state.form.evidence = field.value;
+    return;
+  }
+
+  if (field.dataset.field === "githubRepo") {
+    state.form.githubRepo = field.value;
+    state.githubImport.error = "";
+    state.pendingGithubEvidence = null;
+    return;
+  }
+
+  if (field.dataset.field === "githubPullNumber") {
+    state.form.githubPullNumber = field.value;
+    state.githubImport.error = "";
+    state.pendingGithubEvidence = null;
+    return;
+  }
+
+  if (field.dataset.field === "githubUsernameHint") {
+    state.form.githubUsernameHint = field.value;
+    state.githubImport.error = "";
+    return;
+  }
+
+  if (field.dataset.field === "promovaApiBase") {
+    state.promovaApiBase = String(field.value || "").trim();
   }
 });
 
@@ -1216,6 +1612,12 @@ app.addEventListener("change", (event) => {
 
   if (field.dataset.field === "targetLevel") {
     state.form.targetLevel = field.value;
+    return;
+  }
+
+  if (field.dataset.field === "promovaApiBase") {
+    state.promovaApiBase = String(field.value || "").trim();
+    persistPromovaApiBase(state.promovaApiBase);
   }
 });
 
@@ -1338,6 +1740,14 @@ app.addEventListener("submit", (event) => {
     state.form.currentLevel,
     state.form.targetLevel,
   );
+  if (state.pendingGithubEvidence) {
+    state.result.source = "github";
+    state.result.githubRepo = state.pendingGithubEvidence.repo;
+    state.result.githubPullNumber = state.pendingGithubEvidence.pullNumber;
+    state.result.githubImportedAt = state.pendingGithubEvidence.importedAt;
+  } else {
+    state.result.source = "manual";
+  }
   saveEvidence(state.result);
   state.view = "result";
   render();

@@ -634,6 +634,34 @@ a {
   padding: 28px;
 }
 
+.github-import-card {
+  padding: 22px 22px 20px;
+  margin-bottom: 20px;
+}
+
+.github-import-card h3 {
+  margin: 2px 0 8px;
+}
+
+.github-import-card .form-actions {
+  margin-top: 16px;
+}
+
+.github-pull-list {
+  margin-top: 14px;
+}
+
+.github-pull-list .feed-item {
+  grid-template-columns: auto 1fr auto;
+  padding: 14px 16px;
+}
+
+.github-pull-list .button.ghost {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+}
+
 .field {
   display: grid;
   gap: 10px;
