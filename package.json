@@ -1,0 +1,11 @@
+{
+  "name": "promova",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Protótipo da Promova para registrar evidências e analisar impacto de carreira.",
+  "scripts": {
+    "dev": "node scripts/dev-server.js",
+    "build": "node scripts/build.js",
+    "lint": "node scripts/lint.js"
+  }
+}
